@@ -736,6 +736,8 @@ int main(int argc, char *argv[])
 
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 
+	printf("jamendo-fuse %s loading.\n", GIT_VERSION);
+
 	fuse_main(argc, argv, &jf_operations, NULL);
 
 	ac_btree_destroy(fstree);

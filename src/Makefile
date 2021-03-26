@@ -1,6 +1,8 @@
 APPNAME = jamendo-fuse
 
-GIT_VERSION = \"$(shell git describe --always --long --dirty --all)\"
+GIT_VERSION := \"$(shell git describe --always --dirty 2> /dev/null || cat ../.version)\"
+# Loose the leading 'v' from git describe
+GIT_VERSION := $(subst v,,$(GIT_VERSION))
 
 DEPDIR  := .d
 $(shell mkdir -p $(DEPDIR) >/dev/null)

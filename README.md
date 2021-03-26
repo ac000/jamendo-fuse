@@ -167,7 +167,7 @@ instead with
 ASAN_OPTIONS="log_path=/tmp/asan.log"
 ```
 
-So you could so something like
+So you could do something like
 
 ```
 $ make ASAN=1 && ASAN_OPTIONS="log_path=/tmp/asan.log" JAMENDO_FUSE_DEBUG=true JAMENDO_FUSE_CLIENT_ID=<client_id> ./jamendo-fuse /tmp/jamendo-fuse

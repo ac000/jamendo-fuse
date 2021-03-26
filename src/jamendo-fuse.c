@@ -43,7 +43,15 @@
 enum {
 	ARTIST = 0,
 	ALBUM,
+	FORMAT,
 	TRACK
+};
+
+enum {
+	FMT_MP31 = 0,
+	FMT_MP32,
+	FMT_OGG,
+	FMT_FLAC,
 };
 
 struct curl_buf {
@@ -60,6 +68,7 @@ struct jf_file {
 
 	char *id;
 	char *audio;
+	int audio_fmt;
 	char *content_type;
 };
 
@@ -67,6 +76,17 @@ struct dir_entry {
 	char *path;
 	int type;
 	struct jf_file **jfiles;
+};
+
+static const struct audio_fmt {
+	const int audio_fmt;
+	const char *name;
+	const char *ext;
+} audio_fmts[] = {
+	{ FMT_MP31,	"mp31",		"mp3"	},
+	{ FMT_MP32,	"mp32",		"mp3"	},
+	{ FMT_OGG,	"ogg",		"oga"	},
+	{ FMT_FLAC,	"flac",		"flac"	},
 };
 
 static const char *client_id;
@@ -202,7 +222,31 @@ out_cleanup:
 	return ret;
 }
 
-static void set_files_tracks(struct curl_buf *buf, const char *path)
+static void set_files_format(const char *album_id, const char *path)
+{
+	struct dir_entry *dentry;
+	int n = sizeof(audio_fmts) / sizeof(audio_fmts[0]);
+
+	dentry = calloc(1, sizeof(struct dir_entry));
+	dentry->jfiles = calloc(n + 1, sizeof(void *));
+	for (int i = 0; i < n; i++) {
+		struct jf_file *jf_file;
+
+		jf_file = calloc(1, sizeof(struct jf_file));
+		jf_file->name = strdup(audio_fmts[i].name);
+		jf_file->mode = 0755 | S_IFDIR;
+		jf_file->id = strdup(album_id);
+		jf_file->audio_fmt = audio_fmts[i].audio_fmt;
+
+		dentry->jfiles[i] = jf_file;
+	}
+	dentry->path = strdup(path);
+	dentry->type = FORMAT;
+	ac_btree_add(fstree, dentry);
+}
+
+static void set_files_tracks(struct curl_buf *buf, const char *ext,
+			     const char *path)
 {
 	json_t *root;
 	json_t *results;
@@ -234,9 +278,9 @@ static void set_files_tracks(struct curl_buf *buf, const char *path)
 
 		jf_file = calloc(1, sizeof(struct jf_file));
 
-		len = asprintf(&jf_file->name, "%02d_-_%s.flac",
+		len = asprintf(&jf_file->name, "%02d_-_%s.%s",
 			       atoi(json_string_value(pos)),
-			       json_string_value(name));
+			       json_string_value(name), ext);
 		if (len == -1) { /* shut GCC up [-Wunused-result] */
 			dbg("asprintf() failed!\n");
 			jf_file->name = NULL;
@@ -412,15 +456,42 @@ static void make_full_path(const char *path, const char *name, char *fpath)
 		snprintf(fpath, PATH_MAX, "%s/%s", path, name);
 }
 
-static void do_curl(const char *path)
+static void do_curl(const char *path, int type, const struct jf_file *jfile)
 {
 	const char *api_fmt = "https://api.jamendo.com/v3.0/albums";
 	char api[256];
 	struct curl_buf curl_buf = { 0 };
+
+	if (type == ARTIST)
+		snprintf(api, sizeof(api),
+			 "%s/?client_id=%s&format=json&artist_id=%s&limit=200",
+			 api_fmt, CLIENT_ID, jfile->id);
+	else if (type == FORMAT)
+		snprintf(api, sizeof(api),
+			 "%s/tracks/?client_id=%s&format=json&id=%s&audioformat=%s",
+			 api_fmt, CLIENT_ID, jfile->id,
+			 audio_fmts[jfile->audio_fmt].name);
+	else
+		return;
+
+	dbg("** api : %s\n", api);
+	curl_perform(api, &curl_buf);
+	if (type == ARTIST)
+		set_files_album(&curl_buf, path);
+	else if (type == FORMAT)
+		set_files_tracks(&curl_buf,
+				 audio_fmts[jfile->audio_fmt].ext,
+				 path);
+}
+
+static void get_file_meta(const char *path)
+{
 	struct dir_entry *dentry;
 	struct dir_entry data;
 	bool found = false;
 	int i;
+
+	dbg("path [%s]\n", path);
 
 	data.path = strdup(path);
 	data.path = dirname(data.path);
@@ -442,25 +513,10 @@ static void do_curl(const char *path)
 	if (!found)
 		goto out_free;
 
-	if (dentry->type == ARTIST)
-		snprintf(api, sizeof(api),
-			 "%s/?client_id=%s&format=json&artist_id=%s&limit=200",
-			 api_fmt, CLIENT_ID, dentry->jfiles[i]->id);
-	else if (dentry->type == ALBUM)
-		snprintf(api, sizeof(api),
-			 "%s/tracks/?client_id=%s&format=json&id=%s&audioformat=flac",
-			 api_fmt, CLIENT_ID, dentry->jfiles[i]->id);
+	if (dentry->type == ALBUM)
+		set_files_format(dentry->jfiles[i]->id, path);
 	else
-		goto out_free;
-
-	dbg("** api : %s\n", api);
-	curl_perform(api, &curl_buf);
-	if (dentry->type == ARTIST)
-		set_files_album(&curl_buf, path);
-	else if (dentry->type == ALBUM)
-		set_files_tracks(&curl_buf, path);
-
-	free(curl_buf.buf);
+		do_curl(path, dentry->type, dentry->jfiles[i]);
 
 out_free:
 	free(data.path);
@@ -492,7 +548,7 @@ static int jf_getattr(const char *path, struct stat *st,
 	data.path = dirname(data.path);
 	dentry = ac_btree_lookup(fstree, &data);
 	if (!dentry) {
-		do_curl(data.path);
+		get_file_meta(data.path);
 		dentry = ac_btree_lookup(fstree, &data);
 		if (!dentry)
 			goto out_free;
@@ -556,7 +612,7 @@ static int jf_readdir(const char *path, void *buffer, fuse_fill_dir_t filler,
 	data.path = (char *)path;
 	dentry = ac_btree_lookup(fstree, &data);
 	if (!dentry) {
-		do_curl(path);
+		get_file_meta(path);
 		dentry = ac_btree_lookup(fstree, &data);
 		if (!dentry)
 			return 0;

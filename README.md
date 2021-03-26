@@ -28,15 +28,22 @@ As you move around this filesystem its contents will be dynamically created
 from http calls to jamendo.
 
 Under each of the top level artist directories you will have one or more album
-directories and under them a directory of the album tracks.
+directories, under each of those you will find four directories for the four
+types of audio available (mp31, mp32, ogg & flac), and under them a directory
+of the album tracks. e.g specific track would be at
+
+
+```
+peergynt_lobogris/the_best_of_bluemoons_2009/flac/08_-_cd1_08_always.flac
+```
 
 Initial accesses can be a little slow while it does the http requests, but
 then this information is cached (except, for now at least, for the actual
 track audio data).
 
-Jamendo provides audio in a number of formats, 96kbit/sec and VBR MP3,
-112kbit/sec Ogg Vorbis and FLAC (around 1Mbit/sec). Currently this just
-provides the FLAC audio.
+As noted above, jamendo provides audio in a number of formats, 96kbit/sec and
+VBR MP3, 112kbit/sec Ogg Vorbis and FLAC (around 1Mbit/sec). Those correspond
+to the mp31, mp32, ogg & flac above.
 
 # Build
 

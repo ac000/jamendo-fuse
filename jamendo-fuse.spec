@@ -1,5 +1,5 @@
 Name:		jamendo-fuse
-Version:	0.1
+Version:	0.2
 Release:	1%{?dist}
 Summary:	FUSE interface to jamendo.com
 
@@ -21,7 +21,7 @@ jamendo.com creative commons music platform
 
 
 %build
-make %{?_smp_mflags}
+make %{?_smp_mflags} V=1
 
 
 %install
@@ -39,5 +39,8 @@ rm -rf $RPM_BUILD_ROOT
 
 
 %changelog
+* Fri Mar 26 2021 Andrew Clayton <andrew@digital-domain.net> - 0.2-1
+- Provide access to all the audio formats (mp31, mp32, ogg & flac)
+
 * Thu Mar 25 2021 Andrew Clayton <andrew@digital-domain.net> - 0.1-1
 - Initial version

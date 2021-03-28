@@ -245,7 +245,7 @@ static void set_files_format(const char *album_id, const char *path)
 	ac_btree_add(fstree, dentry);
 }
 
-static void set_files_tracks(struct curl_buf *buf, const char *ext,
+static void set_files_tracks(const struct curl_buf *buf, const char *ext,
 			     const char *path)
 {
 	json_t *root;
@@ -304,7 +304,7 @@ static void set_files_tracks(struct curl_buf *buf, const char *ext,
 	json_decref(root);
 }
 
-static void set_files_album(struct curl_buf *buf, const char *path)
+static void set_files_album(const struct curl_buf *buf, const char *path)
 {
 	json_t *root;
 	json_t *albums;

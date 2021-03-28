@@ -619,9 +619,6 @@ static int jf_readdir(const char *path, void *buffer, fuse_fill_dir_t filler,
 	}
 
 	for (int i = 0; dentry->jfiles[i] != NULL; i++) {
-		if (strcmp(path, dentry->path) != 0)
-			continue;
-
 		memset(&sb, 0, sizeof(struct stat));
 		sb.st_mode = dentry->jfiles[i]->mode;
 		filler(buffer, dentry->jfiles[i]->name, &sb, 0, 0);

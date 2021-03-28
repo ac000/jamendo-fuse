@@ -482,6 +482,8 @@ static void do_curl(const char *path, int type, const struct jf_file *jfile)
 		set_files_tracks(&curl_buf,
 				 audio_fmts[jfile->audio_fmt].ext,
 				 path);
+
+	free(curl_buf.buf);
 }
 
 static void get_file_meta(const char *path)

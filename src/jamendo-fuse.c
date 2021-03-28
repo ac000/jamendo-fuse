@@ -54,6 +54,12 @@ enum {
 	FMT_FLAC,
 };
 
+enum file_op {
+	FOP_GETATTR = 0,
+	FOP_READDIR,
+	FOP_READ,
+};
+
 struct curl_buf {
 	char *buf;
 	size_t len;
@@ -486,17 +492,37 @@ static void do_curl(const char *path, int type, const struct jf_file *jfile)
 	free(curl_buf.buf);
 }
 
-static void get_file_meta(const char *path)
+static struct dir_entry *get_dentry(const char *path, enum file_op op)
 {
 	struct dir_entry *dentry;
 	struct dir_entry data;
+	char *pathc = NULL;
+	char *lpath = NULL;
 	bool found = false;
 	int i;
 
-	dbg("path [%s]\n", path);
+	switch (op) {
+	case FOP_GETATTR:
+	case FOP_READ:
+		pathc = strdup(path);
+		data.path = dirname(pathc);
+		dentry = ac_btree_lookup(fstree, &data);
+		if (dentry)
+			goto out_free;
+		lpath = strdup(data.path);
+		data.path = dirname(data.path);
+		break;
+	case FOP_READDIR:
+		data.path = (char *)path;
+		dentry = ac_btree_lookup(fstree, &data);
+		if (dentry)
+			goto out_free;
+		pathc = strdup(path);
+		lpath = strdup(path);
+		data.path = dirname(pathc);
+		break;
+	}
 
-	data.path = strdup(path);
-	data.path = dirname(data.path);
 	dentry = ac_btree_lookup(fstree, &data);
 	if (!dentry)
 		goto out_free;
@@ -506,32 +532,38 @@ static void get_file_meta(const char *path)
 
 		make_full_path(dentry->path, dentry->jfiles[i]->name,
 			       pathname);
-		if (strcmp(path, pathname) != 0)
+		if (strcmp(lpath, pathname) != 0)
 			continue;
 
 		found = true;
 		break;
 	}
-	if (!found)
+	if (!found) {
+		dentry = NULL;
 		goto out_free;
+	}
 
 	if (dentry->type == ALBUM)
-		set_files_format(dentry->jfiles[i]->id, path);
+		set_files_format(dentry->jfiles[i]->id, lpath);
 	else
-		do_curl(path, dentry->type, dentry->jfiles[i]);
+		do_curl(lpath, dentry->type, dentry->jfiles[i]);
+
+	data.path = lpath;
+	dentry = ac_btree_lookup(fstree, &data);
 
 out_free:
-	free(data.path);
+	free(pathc);
+	free(lpath);
+
+	return dentry;
 }
 
 static int jf_getattr(const char *path, struct stat *st,
 		      struct fuse_file_info *fi __unused)
 {
 	struct dir_entry *dentry;
-	struct dir_entry data;
 	bool found = false;
 	int i;
-	int ret = -1;
 
 	dbg("path [%s]\n", path);
 
@@ -546,15 +578,9 @@ static int jf_getattr(const char *path, struct stat *st,
 		return 0;
 	}
 
-	data.path = strdup(path);
-	data.path = dirname(data.path);
-	dentry = ac_btree_lookup(fstree, &data);
-	if (!dentry) {
-		get_file_meta(data.path);
-		dentry = ac_btree_lookup(fstree, &data);
-		if (!dentry)
-			goto out_free;
-	}
+	dentry = get_dentry(path, FOP_GETATTR);
+	if (!dentry)
+		return -1;
 
 	for (i = 0; dentry->jfiles[i] != NULL; i++) {
 		char pathname[PATH_MAX];
@@ -568,7 +594,7 @@ static int jf_getattr(const char *path, struct stat *st,
 		break;
 	}
 	if (!found)
-		goto out_free;
+		return -1;
 
 	st->st_mode = dentry->jfiles[i]->mode;
 	st->st_nlink = 1;
@@ -589,12 +615,7 @@ static int jf_getattr(const char *path, struct stat *st,
 		st->st_nlink++;
 	}
 
-	ret = 0;
-
-out_free:
-	free(data.path);
-
-	return ret;
+	return 0;
 }
 
 static int jf_readdir(const char *path, void *buffer, fuse_fill_dir_t filler,
@@ -604,21 +625,15 @@ static int jf_readdir(const char *path, void *buffer, fuse_fill_dir_t filler,
 {
 	struct stat sb;
 	struct dir_entry *dentry;
-	struct dir_entry data;
 
 	dbg("path [%s]\n", path);
 
 	filler(buffer, ".", NULL, 0, 0);
 	filler(buffer, "..", NULL, 0, 0);
 
-	data.path = (char *)path;
-	dentry = ac_btree_lookup(fstree, &data);
-	if (!dentry) {
-		get_file_meta(path);
-		dentry = ac_btree_lookup(fstree, &data);
-		if (!dentry)
-			return 0;
-	}
+	dentry = get_dentry(path, FOP_READDIR);
+	if (!dentry)
+		return 0;
 
 	for (int i = 0; dentry->jfiles[i] != NULL; i++) {
 		memset(&sb, 0, sizeof(struct stat));
@@ -633,18 +648,14 @@ static int jf_read(const char *path, char *buffer, size_t size, off_t offset,
 		   struct fuse_file_info *fi __unused)
 {
 	struct dir_entry *dentry;
-	struct dir_entry data;
 	bool found = false;
-	int bytes_read = -1;
 	int i;
 
 	dbg("path [%s]\n", path);
 
-	data.path = strdup(path);
-	data.path = dirname(data.path);
-	dentry = ac_btree_lookup(fstree, &data);
+	dentry = get_dentry(path, FOP_READ);
 	if (!dentry)
-		goto out_free;
+		return -1;
 
 	for (i = 0; dentry->jfiles[i] != NULL; i++) {
 		char pathname[PATH_MAX];
@@ -658,21 +669,14 @@ static int jf_read(const char *path, char *buffer, size_t size, off_t offset,
 		break;
 	}
 	if (!found)
-		goto out_free;
+		return -1;
 
-	if (!(offset < dentry->jfiles[i]->size)) {
-		bytes_read = 0;
-		goto out_free;
-	}
+	if (!(offset < dentry->jfiles[i]->size))
+		return 0;
 
 	dbg("CURL using curl handle @ %p\n", read_file_curl);
-	bytes_read = curl_read_file(dentry->jfiles[i]->audio, buffer, size,
-				    offset);
 
-out_free:
-	free(data.path);
-
-	return bytes_read;
+	return curl_read_file(dentry->jfiles[i]->audio, buffer, size, offset);
 }
 
 int main(int argc, char *argv[])

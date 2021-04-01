@@ -9,10 +9,10 @@ $(shell mkdir -p $(DEPDIR) >/dev/null)
 DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.Td
 
 CC	= gcc
-CFLAGS	= -Wall -Wextra -Wdeclaration-after-statement -Wvla -std=gnu99 \
-	  -g -O2 -Wp,-D_FORTIFY_SOURCE=2 --param=ssp-buffer-size=4 \
+CFLAGS	= -Wall -Wextra -Wdeclaration-after-statement -Wvla -std=gnu99 -g -O2 \
+	  -Wp,-D_FORTIFY_SOURCE=2 --param=ssp-buffer-size=4 -fstack-protector \
 	  -fPIE -fexceptions -fno-common $(shell pkg-config fuse3 --cflags) \
-          -DGIT_VERSION=${GIT_VERSION} -pipe
+	  -DGIT_VERSION=${GIT_VERSION} -pipe
 LDFLAGS = -Wl,-z,now,-z,defs,-z,relro,--as-needed -pie
 LIBS	= $(shell pkg-config fuse3 --libs) -lcurl -ljansson -lac
 POSTCOMPILE = @mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d && touch $@

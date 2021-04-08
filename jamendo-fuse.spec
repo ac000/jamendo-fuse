@@ -9,7 +9,7 @@ URL:		https://github.com/ac000/jamendo-fuse.git
 Source0:	jamendo-fuse-%{version}.tar
 BuildRoot:	%(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
-BuildRequires:	glibc-devel curl-devel libac jansson-devel fuse3-devel
+BuildRequires:	glibc-devel libcurl-devel libac jansson-devel fuse3-devel
 Requires:	libcurl libac jansson fuse3 fuse3-libs
 
 %description

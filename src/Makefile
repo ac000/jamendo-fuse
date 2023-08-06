@@ -44,12 +44,12 @@ endif
 all: $(APPNAME)
 
 $(APPNAME): $(objects)
-	@echo -e "  LNK\t$@"
+	@echo "  LNK  $@"
 	$(v)$(CC) $(LDFLAGS) $(ASAN) -o $@ $(objects) $(LIBS)
 
 %.o: %.c
 %.o: %.c $(DEPDIR)/%.d
-	@echo -e "  CC\t$@"
+	@echo "  CC   $@"
 	$(v)$(CC) $(DEPFLAGS) $(CFLAGS) -c -o $@ $<
 	$(POSTCOMPILE)
 

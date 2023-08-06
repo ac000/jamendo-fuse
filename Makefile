@@ -3,7 +3,7 @@ TARGETS = jamendo-fuse
 .PHONY: all $(TARGETS)
 all: $(TARGETS)
 
-MAKE_OPTS = --no-print-directory V=$V
+MAKE_OPTS = --no-print-directory
 
 .PHONY: jamendo-fuse
 jamendo-fuse:

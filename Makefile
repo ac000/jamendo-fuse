@@ -7,12 +7,12 @@ MAKE_OPTS = --no-print-directory V=$V
 
 .PHONY: jamendo-fuse
 jamendo-fuse:
-	@echo -e "Building: jamendo-fuse"
+	@echo "Building: jamendo-fuse"
 	@$(MAKE) $(MAKE_OPTS) -C src/
 
 .PHONY: rpm
 rpm:
-	@echo -e "Building: rpm"
+	@echo "Building: rpm"
 ifeq ($(wildcard ~/rpmbuild/),)
 	@echo "***"
 	@echo "*** ~/rpmbuild not found, create with"
@@ -30,6 +30,6 @@ endif
 
 .PHONY: clean
 clean:
-	@echo -e "Cleaning: $(TARGETS)"
+	@echo "Cleaning: $(TARGETS)"
 	@$(MAKE) $(MAKE_OPTS) -C src/ clean
 	@rm -f .version

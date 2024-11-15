@@ -28,7 +28,7 @@ ifneq "$(GCC_VER_OK)" "1"
         CFLAGS += -Wno-missing-field-initializers
 endif
 
-sources     = $(wildcard *.c)
+sources = $(wildcard *.c)
 objects = $(sources:.c=.o)
 
 ifeq ($(ASAN),1)

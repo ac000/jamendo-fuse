@@ -679,34 +679,14 @@ static int jf_read(const char *path, char *buffer, size_t size, off_t offset,
 	return curl_read_file(dentry->jfiles[i]->audio, buffer, size, offset);
 }
 
-int main(int argc, char *argv[])
+static void fstree_init_artists_json(void)
 {
 	json_t *root;
 	json_t *artists;
 	json_t *artist;
 	size_t i;
-	const char *dbg;
 	char artists_config[PATH_MAX];
 	struct dir_entry *dentry;
-	const struct fuse_operations jf_operations = {
-		.getattr	= jf_getattr,
-		.readdir	= jf_readdir,
-		.read		= jf_read,
-	};
-
-	client_id = getenv("JAMENDO_FUSE_CLIENT_ID");
-	if (!client_id || argc < 2) {
-		fprintf(stderr,
-			"Usage: JAMENDO_FUSE_CLIENT_ID=<client_id> "
-			"jamendo-fuse <mount_point>\n");
-		exit(EXIT_FAILURE);
-	}
-
-	dbg = getenv("JAMENDO_FUSE_DEBUG");
-	if (dbg && (*dbg == 'y' || *dbg == 't' || *dbg == '1'))
-		debug = true;
-
-	debug_fp = fopen("/tmp/jamendo-fuse.log", "w");
 
 	fstree = ac_btree_new(compare_paths, free_dentry);
 
@@ -736,6 +716,32 @@ int main(int argc, char *argv[])
 	dentry->path = strdup("/");
 	dentry->type = ARTIST;
 	ac_btree_add(fstree, dentry);
+}
+
+int main(int argc, char *argv[])
+{
+	const char *dbg;
+	const struct fuse_operations jf_operations = {
+		.getattr	= jf_getattr,
+		.readdir	= jf_readdir,
+		.read		= jf_read,
+	};
+
+	client_id = getenv("JAMENDO_FUSE_CLIENT_ID");
+	if (!client_id || argc < 2) {
+		fprintf(stderr,
+			"Usage: JAMENDO_FUSE_CLIENT_ID=<client_id> "
+			"jamendo-fuse <mount_point>\n");
+		exit(EXIT_FAILURE);
+	}
+
+	dbg = getenv("JAMENDO_FUSE_DEBUG");
+	if (dbg && (*dbg == 'y' || *dbg == 't' || *dbg == '1'))
+		debug = true;
+
+	debug_fp = fopen("/tmp/jamendo-fuse.log", "w");
+
+	fstree_init_artists_json();
 
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 

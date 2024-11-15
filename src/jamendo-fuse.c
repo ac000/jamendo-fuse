@@ -146,7 +146,7 @@ static char *normalise_fname(char *name)
 
 	len = strlen(name);
 	ptr += len;
-	while (*(--ptr)) {
+	while (*--ptr) {
 		switch (*ptr) {
 		case 'A' ... 'Z':
 			*ptr = tolower(*ptr);

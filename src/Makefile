@@ -9,7 +9,7 @@ $(shell mkdir -p $(DEPDIR) >/dev/null)
 DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.Td
 
 CC	= gcc
-CFLAGS	= -Wall -Wextra -Wdeclaration-after-statement -Wvla -std=gnu99 -g -O2 \
+CFLAGS	= -Wall -Wextra -Wdeclaration-after-statement -Wvla -std=gnu11 -g -O2 \
 	  -Wp,-D_FORTIFY_SOURCE=2 --param=ssp-buffer-size=4 -fstack-protector \
 	  -fPIE -fexceptions -fno-common $(shell pkg-config fuse3 --cflags) \
 	  -DGIT_VERSION=${GIT_VERSION} -pipe

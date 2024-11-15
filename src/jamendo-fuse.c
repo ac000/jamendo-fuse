@@ -412,7 +412,7 @@ static int curl_read_file(const char *url, char *buf, size_t size,
 	int ret;
 	CURLcode res;
 	char range[64];
-	struct curl_buf curl_buf = { 0 };
+	struct curl_buf curl_buf = {};
 
 	snprintf(range, sizeof(range), "%zu-%zu", offset, offset + size - 1);
 	dbg("Requesting bytes [%s] from : %s\n", range, url);
@@ -466,7 +466,7 @@ static void do_curl(const char *path, int type, const struct jf_file *jfile)
 {
 	const char *api_fmt = "https://api.jamendo.com/v3.0/albums";
 	char api[256];
-	struct curl_buf curl_buf = { 0 };
+	struct curl_buf curl_buf = {};
 
 	if (type == ARTIST)
 		snprintf(api, sizeof(api),
@@ -604,7 +604,7 @@ static int jf_getattr(const char *path, struct stat *st,
 		st->st_blocks = dentry->jfiles[i]->blocks;
 	} else if (st->st_mode & S_IFDIR) {
 		if (dentry->jfiles[i]->date) {
-			struct tm tm = { 0 };
+			struct tm tm = {};
 			time_t ds;
 
 			strptime(dentry->jfiles[i]->date, "%F", &tm);

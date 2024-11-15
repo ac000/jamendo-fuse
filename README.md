@@ -99,7 +99,8 @@ $ sudo dnf install ~/rpmbuild/RPMS/x86_64/jamendo-fuse-*
 # Use
 
 In order to use this, the first thing you will need to do is get a client id
-from jamendo. This can be acquired by signing up [here](https://devportal.jamendo.com/signup).
+from jamendo. This can be acquired by signing up
+[here](https://devportal.jamendo.com/signup).
 
 That will generate you a client\_id.
 

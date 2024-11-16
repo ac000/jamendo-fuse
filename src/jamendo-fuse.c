@@ -722,7 +722,7 @@ static void fstree_init_artists_json(void)
 int main(int argc, char *argv[])
 {
 	const char *dbg;
-	const struct fuse_operations jf_operations = {
+	static const struct fuse_operations jf_operations = {
 		.getattr	= jf_getattr,
 		.readdir	= jf_readdir,
 		.read		= jf_read,

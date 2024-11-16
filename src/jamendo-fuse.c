@@ -40,11 +40,11 @@
 
 #define __unused		__attribute__((unused))
 
-enum {
-	ARTIST = 0,
-	ALBUM,
-	FORMAT,
-	TRACK
+enum jf_dentry_type {
+	JF_DT_ARTIST = 0,
+	JF_DT_ALBUM,
+	JF_DT_FORMAT,
+	JF_DT_TRACK
 };
 
 enum {
@@ -80,7 +80,7 @@ struct jf_file {
 
 struct dir_entry {
 	char *path;
-	int type;
+	enum jf_dentry_type type;
 	struct jf_file **jfiles;
 };
 
@@ -247,7 +247,7 @@ static void set_files_format(const char *album_id, const char *path)
 		dentry->jfiles[i] = jf_file;
 	}
 	dentry->path = strdup(path);
-	dentry->type = FORMAT;
+	dentry->type = JF_DT_FORMAT;
 	ac_btree_add(fstree, dentry);
 }
 
@@ -304,7 +304,7 @@ static void set_files_tracks(const struct curl_buf *buf, const char *ext,
 		dentry->jfiles[index] = jf_file;
 	}
 	dentry->path = strdup(path);
-	dentry->type = TRACK;
+	dentry->type = JF_DT_TRACK;
 	ac_btree_add(fstree, dentry);
 
 	json_decref(root);
@@ -343,7 +343,7 @@ static void set_files_album(const struct curl_buf *buf, const char *path)
 		dentry->jfiles[index] = jf_file;
 	}
 	dentry->path = strdup(path);
-	dentry->type = ALBUM;
+	dentry->type = JF_DT_ALBUM;
 	ac_btree_add(fstree, dentry);
 
 	json_decref(root);
@@ -462,17 +462,18 @@ static void make_full_path(const char *path, const char *name, char *fpath)
 		snprintf(fpath, PATH_MAX, "%s/%s", path, name);
 }
 
-static void do_curl(const char *path, int type, const struct jf_file *jfile)
+static void do_curl(const char *path, enum jf_dentry_type type,
+		    const struct jf_file *jfile)
 {
 	const char *api_fmt = "https://api.jamendo.com/v3.0/albums";
 	char api[256];
 	struct curl_buf curl_buf = {};
 
-	if (type == ARTIST)
+	if (type == JF_DT_ARTIST)
 		snprintf(api, sizeof(api),
 			 "%s/?client_id=%s&format=json&artist_id=%s&limit=200",
 			 api_fmt, CLIENT_ID, jfile->id);
-	else if (type == FORMAT)
+	else if (type == JF_DT_FORMAT)
 		snprintf(api, sizeof(api),
 			 "%s/tracks/?client_id=%s&format=json&id=%s&audioformat=%s",
 			 api_fmt, CLIENT_ID, jfile->id,
@@ -482,9 +483,9 @@ static void do_curl(const char *path, int type, const struct jf_file *jfile)
 
 	dbg("** api : %s\n", api);
 	curl_perform(api, &curl_buf);
-	if (type == ARTIST)
+	if (type == JF_DT_ARTIST)
 		set_files_album(&curl_buf, path);
-	else if (type == FORMAT)
+	else if (type == JF_DT_FORMAT)
 		set_files_tracks(&curl_buf,
 				 audio_fmts[jfile->audio_fmt].ext,
 				 path);
@@ -543,7 +544,7 @@ static struct dir_entry *get_dentry(const char *path, enum file_op op)
 		goto out_free;
 	}
 
-	if (dentry->type == ALBUM)
+	if (dentry->type == JF_DT_ALBUM)
 		set_files_format(dentry->jfiles[i]->id, lpath);
 	else
 		do_curl(lpath, dentry->type, dentry->jfiles[i]);
@@ -714,7 +715,7 @@ static void fstree_init_artists_json(void)
 	}
 	json_decref(root);
 	dentry->path = strdup("/");
-	dentry->type = ARTIST;
+	dentry->type = JF_DT_ARTIST;
 	ac_btree_add(fstree, dentry);
 }
 

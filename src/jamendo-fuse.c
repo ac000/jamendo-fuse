@@ -204,7 +204,7 @@ static char *normalise_fname(char *name)
 	return name;
 }
 
-static int compare_paths(const void *a, const void *b)
+static int compare_dentry_paths(const void *a, const void *b)
 {
 	const struct dir_entry *dentry1 = a;
 	const struct dir_entry *dentry2 = b;
@@ -986,7 +986,7 @@ int main(int argc, char *argv[])
 
 	printf("jamendo-fuse %s loading.\n", GIT_VERSION);
 
-	fstree = ac_btree_new(compare_paths, free_dentry);
+	fstree = ac_btree_new(compare_dentry_paths, free_dentry);
 
 	if (!use_config)
 		fstree_init_jamendo();

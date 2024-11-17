@@ -3,7 +3,7 @@
 /*
  * jamendo-fuse.c - FUSE interface to jamendo.org
  *
- * Copyright (c) 2021		Andrew Clayton <andrew@digital-domain.net>
+ * Copyright (c) 2021 - 2024	Andrew Clayton <andrew@digital-domain.net>
  */
 
 #define _GNU_SOURCE

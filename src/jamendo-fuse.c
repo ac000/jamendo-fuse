@@ -129,7 +129,6 @@ static void free_dentry(void *data)
 		free(jfile->content_type);
 		free(jfile);
 	}
-	free(dentry->jfiles[i]);
 
 	free(dentry->jfiles);
 	free(dentry->path);

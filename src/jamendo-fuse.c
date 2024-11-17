@@ -280,7 +280,7 @@ static void set_files_format(const char *album_id, const char *path)
 
 		jf_file = calloc(1, sizeof(struct jf_file));
 		jf_file->name = strdup(audio_fmts[i].name);
-		jf_file->mode = 0755 | S_IFDIR;
+		jf_file->mode = 0555 | S_IFDIR;
 		jf_file->id = strdup(album_id);
 		jf_file->audio_fmt = audio_fmts[i].audio_fmt;
 
@@ -333,7 +333,7 @@ static void set_files_tracks(const struct curl_buf *buf, const char *ext,
 		}
 
 		normalise_fname(jf_file->name);
-		jf_file->mode = 0644 | S_IFREG;
+		jf_file->mode = 0444 | S_IFREG;
 		jf_file->id = strdup(json_string_value(id));
 		jf_file->audio = strdup(json_string_value(audio));
 
@@ -377,7 +377,7 @@ static void set_files_album(const struct curl_buf *buf, const char *path)
 		jf_file->name = strdup(json_string_value(name));
 		normalise_fname(jf_file->name);
 		jf_file->date = strdup(json_string_value(date));
-		jf_file->mode = 0755 | S_IFDIR;
+		jf_file->mode = 0555 | S_IFDIR;
 		jf_file->id = strdup(json_string_value(id));
 
 		dentry->jfiles[index] = jf_file;
@@ -415,7 +415,7 @@ static void set_file_entity(const struct curl_buf *buf, const char *path,
 		jf_file->orig_name = strdup(json_string_value(entity));
 		jf_file->name = strdup(json_string_value(entity));
 		normalise_fname(jf_file->name);
-		jf_file->mode = 0755 | S_IFDIR;
+		jf_file->mode = 0555 | S_IFDIR;
 		dentry->jfiles[i] = jf_file;
 	}
 	dentry->path = strdup(path);
@@ -658,7 +658,7 @@ static void fstree_populate_a_z(const char *path,
 		jf_file = calloc(1, sizeof(struct jf_file));
 		sprintf(alpha, "%c", c);
 		jf_file->name = strdup(alpha);
-		jf_file->mode = 0755 | S_IFDIR;
+		jf_file->mode = 0555 | S_IFDIR;
 		dentry->jfiles[i] = jf_file;
 	}
 	dentry->path = strdup(path);
@@ -763,7 +763,7 @@ static int jf_getattr(const char *path, struct stat *st,
 	st->st_mtime = time(NULL);
 
 	if (strcmp(path, "/") == 0) {
-		st->st_mode = 0755 | S_IFDIR;
+		st->st_mode = 0555 | S_IFDIR;
 		st->st_nlink = 2;
 		return 0;
 	}
@@ -876,7 +876,7 @@ static void fstree_init_jamendo(void)
 
 	jf_file = calloc(1, sizeof(struct jf_file));
 	jf_file->name = strdup("artists");
-	jf_file->mode = 0755 | S_IFDIR;
+	jf_file->mode = 0555 | S_IFDIR;
 
 	dentry = calloc(1, sizeof(struct dir_entry));
 	dentry->jfiles = calloc(2 /* 1 + NULL */, sizeof(void *));
@@ -916,7 +916,7 @@ static void fstree_init_artists_json(void)
 		jf_file = calloc(1, sizeof(struct jf_file));
 		jf_file->name = strdup(json_string_value(name));
 		jf_file->id = strdup(json_string_value(id));
-		jf_file->mode = 0755 | S_IFDIR;
+		jf_file->mode = 0555 | S_IFDIR;
 		dentry->jfiles[i] = jf_file;
 	}
 	json_decref(root);

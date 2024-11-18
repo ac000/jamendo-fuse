@@ -284,12 +284,12 @@ out_cleanup:
 static void set_files_format(const char *album_id, const char *path)
 {
 	struct dir_entry *dentry;
-	int n = sizeof(audio_fmts) / sizeof(audio_fmts[0]);
+	size_t n = sizeof(audio_fmts) / sizeof(audio_fmts[0]);
 
 	dentry = calloc(1, sizeof(struct dir_entry));
 	dentry->jfiles = ac_btree_new(compare_file_paths, free_jf_file);
 
-	for (int i = 0; i < n; i++) {
+	for (size_t i = 0; i < n; i++) {
 		struct jf_file *jf_file;
 
 		jf_file = calloc(1, sizeof(struct jf_file));

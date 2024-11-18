@@ -621,9 +621,9 @@ static void do_curl_autocomplete(const char *path,
 static void do_curl(const char *path, const struct dir_entry *dentry,
 		    struct jf_file *jfile)
 {
-	const char *api_fmt = "https://api.jamendo.com/v3.0/albums";
 	char api[256];
 	struct curl_buf curl_buf = {};
+	const char *api_fmt = "https://api.jamendo.com/v3.0/albums";
 
 	if (dentry->type == JF_DT_ARTIST) {
 		if (!jfile->id)

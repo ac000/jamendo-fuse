@@ -40,6 +40,8 @@
 
 #define CLIENT_ID		client_id
 
+#define API_URL_MAX_LEN		256
+
 #define list_foreach(list)	for ( ; list; list = list->next)
 
 #define __unused		__attribute__((unused))
@@ -549,7 +551,7 @@ out_free:
 
 static char *lookup_artist_id(const char *name)
 {
-	char api[256];
+	char api[API_URL_MAX_LEN];
 	char *aid = NULL;
 	char *cstr;
 	CURL *curl;
@@ -591,7 +593,7 @@ static char *lookup_artist_id(const char *name)
 static void do_curl_autocomplete(const char *path,
 				 const struct dir_entry *dentry)
 {
-	char api[256];
+	char api[API_URL_MAX_LEN];
 	char prefix[3] = {};
 	char *ptr;
 	struct curl_buf curl_buf = {};
@@ -621,7 +623,7 @@ static void do_curl_autocomplete(const char *path,
 static void do_curl(const char *path, const struct dir_entry *dentry,
 		    struct jf_file *jfile)
 {
-	char api[256];
+	char api[API_URL_MAX_LEN];
 	struct curl_buf curl_buf = {};
 	const char *api_fmt = "https://api.jamendo.com/v3.0/albums";
 

@@ -114,7 +114,7 @@ struct dir_entry {
 	char *path;
 	enum jf_dentry_type type;
 	enum jf_autocomplete_entity entity;
-	struct jf_file **jfiles;
+	ac_btree_t *jfiles;
 };
 
 static const struct audio_fmt {
@@ -151,27 +151,32 @@ static FILE *debug_fp;
 		fflush(debug_fp); \
 	} while (0)
 
+static void free_jf_file(void *data)
+{
+	struct jf_file *jfile = data;
+
+	if (!jfile)
+		return;
+
+	free(jfile->orig_name);
+	free(jfile->name);
+	free(jfile->id);
+	free(jfile->date);
+	free(jfile->audio);
+	free(jfile->content_type);
+
+	free(jfile);
+}
+
 static void free_dentry(void *data)
 {
 	struct dir_entry *dentry = data;
-	int i;
 
 	if (!dentry)
 		return;
 
-	for (i = 0; dentry->jfiles[i] != NULL; i++) {
-		struct jf_file *jfile = dentry->jfiles[i];
+	ac_btree_destroy(dentry->jfiles);
 
-		free(jfile->orig_name);
-		free(jfile->name);
-		free(jfile->id);
-		free(jfile->date);
-		free(jfile->audio);
-		free(jfile->content_type);
-		free(jfile);
-	}
-
-	free(dentry->jfiles);
 	free(dentry->path);
 	free(dentry);
 }
@@ -202,6 +207,14 @@ static char *normalise_fname(char *name)
 	}
 
 	return name;
+}
+
+static int compare_file_paths(const void *a, const void *b)
+{
+	const struct jf_file *jfile1 = a;
+	const struct jf_file *jfile2 = b;
+
+	return strcmp(jfile1->name, jfile2->name);
 }
 
 static int compare_dentry_paths(const void *a, const void *b)
@@ -274,7 +287,8 @@ static void set_files_format(const char *album_id, const char *path)
 	int n = sizeof(audio_fmts) / sizeof(audio_fmts[0]);
 
 	dentry = calloc(1, sizeof(struct dir_entry));
-	dentry->jfiles = calloc(n + 1, sizeof(void *));
+	dentry->jfiles = ac_btree_new(compare_file_paths, free_jf_file);
+
 	for (int i = 0; i < n; i++) {
 		struct jf_file *jf_file;
 
@@ -284,7 +298,7 @@ static void set_files_format(const char *album_id, const char *path)
 		jf_file->id = strdup(album_id);
 		jf_file->audio_fmt = audio_fmts[i].audio_fmt;
 
-		dentry->jfiles[i] = jf_file;
+		ac_btree_add(dentry->jfiles, jf_file);
 	}
 	dentry->path = strdup(path);
 	dentry->type = JF_DT_FORMAT;
@@ -308,7 +322,8 @@ static void set_files_tracks(const struct curl_buf *buf, const char *ext,
 	tracks = json_object_get(trks, "tracks");
 
 	dentry = calloc(1, sizeof(struct dir_entry));
-	dentry->jfiles = calloc(json_array_size(tracks) + 1, sizeof(void *));
+	dentry->jfiles = ac_btree_new(compare_file_paths, free_jf_file);
+
 	json_array_foreach(tracks, index, track) {
 		json_t *id;
 		json_t *name;
@@ -341,7 +356,7 @@ static void set_files_tracks(const struct curl_buf *buf, const char *ext,
 		jf_file->blocks = (jf_file->size / 512) +
 				  (jf_file->size % 512 == 0 ? 0 : 1);
 
-		dentry->jfiles[index] = jf_file;
+		ac_btree_add(dentry->jfiles, jf_file);
 	}
 	dentry->path = strdup(path);
 	dentry->type = JF_DT_TRACK;
@@ -362,7 +377,8 @@ static void set_files_album(const struct curl_buf *buf, const char *path)
 	albums = json_object_get(root, "results");
 
 	dentry = calloc(1, sizeof(struct dir_entry));
-	dentry->jfiles = calloc(json_array_size(albums) + 1, sizeof(void *));
+	dentry->jfiles = ac_btree_new(compare_file_paths, free_jf_file);
+
 	json_array_foreach(albums, index, album) {
 		json_t *id;
 		json_t *name;
@@ -380,7 +396,7 @@ static void set_files_album(const struct curl_buf *buf, const char *path)
 		jf_file->mode = 0555 | S_IFDIR;
 		jf_file->id = strdup(json_string_value(id));
 
-		dentry->jfiles[index] = jf_file;
+		ac_btree_add(dentry->jfiles, jf_file);
 	}
 	dentry->path = strdup(path);
 	dentry->type = JF_DT_ALBUM;
@@ -403,7 +419,7 @@ static void set_file_entity(const struct curl_buf *buf, const char *path,
 				   jf_autocomplete_entities[prev_dir->entity]);
 
 	dentry = calloc(1, sizeof(struct dir_entry));
-	dentry->jfiles = calloc(json_array_size(entities) + 1, sizeof(void *));
+	dentry->jfiles = ac_btree_new(compare_file_paths, free_jf_file);
 
 	for (size_t i = 0; i < json_array_size(entities); i++) {
 		json_t *entity;
@@ -416,7 +432,8 @@ static void set_file_entity(const struct curl_buf *buf, const char *path,
 		jf_file->name = strdup(json_string_value(entity));
 		normalise_fname(jf_file->name);
 		jf_file->mode = 0555 | S_IFDIR;
-		dentry->jfiles[i] = jf_file;
+
+		ac_btree_add(dentry->jfiles, jf_file);
 	}
 	dentry->path = strdup(path);
 	dentry->type = (enum jf_dentry_type)prev_dir->entity;
@@ -528,14 +545,6 @@ out_free:
 	free(curl_buf.buf);
 
 	return ret;
-}
-
-static void make_full_path(const char *path, const char *name, char *fpath)
-{
-	if (strcmp(path, "/") == 0)
-		snprintf(fpath, PATH_MAX, "/%s", name);
-	else
-		snprintf(fpath, PATH_MAX, "%s/%s", path, name);
 }
 
 static char *lookup_artist_id(const char *name)
@@ -650,7 +659,8 @@ static void fstree_populate_a_z(const char *path,
 	struct dir_entry *dentry;
 
 	dentry = calloc(1, sizeof(struct dir_entry));
-	dentry->jfiles = calloc(26 + 1, sizeof(void *));
+	dentry->jfiles = ac_btree_new(compare_file_paths, free_jf_file);
+
 	for (int c = 'a', i = 0; c <= 'z'; c++, i++) {
 		struct jf_file *jf_file;
 		char alpha[2];
@@ -659,7 +669,8 @@ static void fstree_populate_a_z(const char *path,
 		sprintf(alpha, "%c", c);
 		jf_file->name = strdup(alpha);
 		jf_file->mode = 0555 | S_IFDIR;
-		dentry->jfiles[i] = jf_file;
+
+		ac_btree_add(dentry->jfiles, jf_file);
 	}
 	dentry->path = strdup(path);
 	dentry->entity = prev_dir->entity;
@@ -674,12 +685,12 @@ static void fstree_populate_a_z(const char *path,
 
 static struct dir_entry *get_dentry(const char *path, enum file_op op)
 {
+	struct jf_file jfile;
+	struct jf_file *jfilep;
 	struct dir_entry *dentry;
 	struct dir_entry data;
 	char *pathc = NULL;
 	char *lpath = NULL;
-	bool found = false;
-	int i;
 
 	switch (op) {
 	case FOP_GETATTR:
@@ -707,18 +718,9 @@ static struct dir_entry *get_dentry(const char *path, enum file_op op)
 	if (!dentry)
 		goto out_free;
 
-	for (i = 0; dentry->jfiles[i] != NULL; i++) {
-		char pathname[PATH_MAX];
-
-		make_full_path(dentry->path, dentry->jfiles[i]->name,
-			       pathname);
-		if (strcmp(lpath, pathname) != 0)
-			continue;
-
-		found = true;
-		break;
-	}
-	if (!found) {
+	jfile.name = strrchr(lpath, '/') + 1;
+	jfilep = ac_btree_lookup(dentry->jfiles, &jfile);
+	if (!jfilep) {
 		dentry = NULL;
 		goto out_free;
 	}
@@ -732,10 +734,10 @@ static struct dir_entry *get_dentry(const char *path, enum file_op op)
 		do_curl_autocomplete(lpath, dentry);
 		break;
 	case JF_DT_ALBUM:
-		set_files_format(dentry->jfiles[i]->id, lpath);
+		set_files_format(jfilep->id, lpath);
 		break;
 	default:
-		do_curl(lpath, dentry, dentry->jfiles[i]);
+		do_curl(lpath, dentry, jfilep);
 	}
 
 	data.path = lpath;
@@ -751,9 +753,9 @@ out_free:
 static int jf_getattr(const char *path, struct stat *st,
 		      struct fuse_file_info *fi __unused)
 {
+	struct jf_file jfile;
+	struct jf_file *jfilep;
 	struct dir_entry *dentry;
-	bool found = false;
-	int i;
 
 	dbg("path [%s]\n", path);
 
@@ -772,32 +774,23 @@ static int jf_getattr(const char *path, struct stat *st,
 	if (!dentry)
 		return -1;
 
-	for (i = 0; dentry->jfiles[i] != NULL; i++) {
-		char pathname[PATH_MAX];
-
-		make_full_path(dentry->path, dentry->jfiles[i]->name,
-			       pathname);
-		if (strcmp(path, pathname) != 0)
-			continue;
-
-		found = true;
-		break;
-	}
-	if (!found)
+	jfile.name = strrchr(path, '/') + 1;
+	jfilep = ac_btree_lookup(dentry->jfiles, &jfile);
+	if (!jfilep)
 		return -1;
 
-	st->st_mode = dentry->jfiles[i]->mode;
+	st->st_mode = jfilep->mode;
 	st->st_nlink = 1;
 
 	if (st->st_mode & S_IFREG) {
-		st->st_size = dentry->jfiles[i]->size;
-		st->st_blocks = dentry->jfiles[i]->blocks;
+		st->st_size = jfilep->size;
+		st->st_blocks = jfilep->blocks;
 	} else if (st->st_mode & S_IFDIR) {
-		if (dentry->jfiles[i]->date) {
+		if (jfilep->date) {
 			struct tm tm = {};
 			time_t ds;
 
-			strptime(dentry->jfiles[i]->date, "%F", &tm);
+			strptime(jfilep->date, "%F", &tm);
 			ds = mktime(&tm);
 			st->st_atime = st->st_mtime = ds;
 		}
@@ -808,13 +801,35 @@ static int jf_getattr(const char *path, struct stat *st,
 	return 0;
 }
 
+struct jf_file_filler_data {
+	fuse_fill_dir_t filler;
+	void *buffer;
+};
+
+static void jf_file_filler(const void *nodep, VISIT which, void *data)
+{
+	const struct jf_file *jfile = *(struct jf_file **)nodep;
+	const struct jf_file_filler_data *jf_data = data;
+	struct stat sb = {};
+
+	switch (which) {
+	case preorder:
+	case endorder:
+		return;
+	case postorder:
+	case leaf:
+		sb.st_mode = jfile->mode;
+		jf_data->filler(jf_data->buffer, jfile->name, &sb, 0, 0);
+	}
+}
+
 static int jf_readdir(const char *path, void *buffer, fuse_fill_dir_t filler,
 		      off_t offset __unused,
 		      struct fuse_file_info *fi __unused,
 		      enum fuse_readdir_flags flags __unused)
 {
-	struct stat sb;
 	struct dir_entry *dentry;
+	struct jf_file_filler_data jf_data;
 
 	dbg("path [%s]\n", path);
 
@@ -825,11 +840,10 @@ static int jf_readdir(const char *path, void *buffer, fuse_fill_dir_t filler,
 	if (!dentry)
 		return 0;
 
-	for (int i = 0; dentry->jfiles[i] != NULL; i++) {
-		memset(&sb, 0, sizeof(struct stat));
-		sb.st_mode = dentry->jfiles[i]->mode;
-		filler(buffer, dentry->jfiles[i]->name, &sb, 0, 0);
-	}
+	jf_data.filler = filler;
+	jf_data.buffer = buffer;
+
+	ac_btree_foreach_data(dentry->jfiles, jf_file_filler, &jf_data);
 
 	return 0;
 }
@@ -837,9 +851,9 @@ static int jf_readdir(const char *path, void *buffer, fuse_fill_dir_t filler,
 static int jf_read(const char *path, char *buffer, size_t size, off_t offset,
 		   struct fuse_file_info *fi __unused)
 {
+	struct jf_file jfile;
+	struct jf_file *jfilep;
 	struct dir_entry *dentry;
-	bool found = false;
-	int i;
 
 	dbg("path [%s]\n", path);
 
@@ -847,26 +861,17 @@ static int jf_read(const char *path, char *buffer, size_t size, off_t offset,
 	if (!dentry)
 		return -1;
 
-	for (i = 0; dentry->jfiles[i] != NULL; i++) {
-		char pathname[PATH_MAX];
-
-		make_full_path(dentry->path, dentry->jfiles[i]->name,
-			       pathname);
-		if (strcmp(path, pathname) != 0)
-			continue;
-
-		found = true;
-		break;
-	}
-	if (!found)
+	jfile.name = strrchr(path, '/') + 1;
+	jfilep = ac_btree_lookup(dentry->jfiles, &jfile);
+	if (!jfilep)
 		return -1;
 
-	if (!(offset < dentry->jfiles[i]->size))
+	if (!(offset < jfilep->size))
 		return 0;
 
 	dbg("CURL using curl handle @ %p\n", read_file_curl);
 
-	return curl_read_file(dentry->jfiles[i]->audio, buffer, size, offset);
+	return curl_read_file(jfilep->audio, buffer, size, offset);
 }
 
 static void fstree_init_jamendo(void)
@@ -879,9 +884,10 @@ static void fstree_init_jamendo(void)
 	jf_file->mode = 0555 | S_IFDIR;
 
 	dentry = calloc(1, sizeof(struct dir_entry));
-	dentry->jfiles = calloc(2 /* 1 + NULL */, sizeof(void *));
+	dentry->jfiles = ac_btree_new(compare_file_paths, free_jf_file);
 
-	dentry->jfiles[0] = jf_file;
+	ac_btree_add(dentry->jfiles, jf_file);
+
 	dentry->path = strdup("/");
 	dentry->type = JF_DT_TL_ARTISTS;
 	dentry->entity = JF_A_E_ARTIST;
@@ -907,7 +913,8 @@ static void fstree_init_artists_json(void)
 
 	artists = json_object_get(root, "artists");
 	dentry = calloc(1, sizeof(struct dir_entry));
-	dentry->jfiles = calloc(json_array_size(artists) + 1, sizeof(void *)); 
+	dentry->jfiles = ac_btree_new(compare_file_paths, free_jf_file);
+
 	json_array_foreach(artists, i, artist) {
 		struct jf_file *jf_file;
 		json_t *name = json_array_get(artist, 0);
@@ -917,7 +924,8 @@ static void fstree_init_artists_json(void)
 		jf_file->name = strdup(json_string_value(name));
 		jf_file->id = strdup(json_string_value(id));
 		jf_file->mode = 0555 | S_IFDIR;
-		dentry->jfiles[i] = jf_file;
+
+		ac_btree_add(dentry->jfiles, jf_file);
 	}
 	json_decref(root);
 	dentry->path = strdup("/");

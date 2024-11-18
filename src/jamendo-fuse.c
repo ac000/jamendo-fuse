@@ -312,6 +312,7 @@ static void set_files_tracks(const struct curl_buf *buf, const char *ext,
 {
 	json_t *root;
 	json_t *results;
+	json_t *rdate;
 	json_t *tracks;
 	json_t *trks;
 	json_t *track;
@@ -321,6 +322,7 @@ static void set_files_tracks(const struct curl_buf *buf, const char *ext,
 	root = json_loads(buf->buf, 0, NULL);
 	results = json_object_get(root, "results");
 	trks = json_array_get(results, 0);
+	rdate = json_object_get(trks, "releasedate");
 	tracks = json_object_get(trks, "tracks");
 
 	dentry = calloc(1, sizeof(struct dir_entry));
@@ -351,6 +353,7 @@ static void set_files_tracks(const struct curl_buf *buf, const char *ext,
 
 		normalise_fname(jf_file->name);
 		jf_file->mode = 0444 | S_IFREG;
+		jf_file->date = strdup(json_string_value(rdate));
 		jf_file->id = strdup(json_string_value(id));
 		jf_file->audio = strdup(json_string_value(audio));
 
@@ -787,7 +790,9 @@ static int jf_getattr(const char *path, struct stat *st,
 	if (st->st_mode & S_IFREG) {
 		st->st_size = jfilep->size;
 		st->st_blocks = jfilep->blocks;
-	} else if (st->st_mode & S_IFDIR) {
+	}
+
+	if (st->st_mode & S_IFDIR || dentry->type == JF_DT_TRACK) {
 		if (jfilep->date) {
 			struct tm tm = {};
 			time_t ds;
@@ -797,7 +802,8 @@ static int jf_getattr(const char *path, struct stat *st,
 			st->st_atime = st->st_mtime = ds;
 		}
 
-		st->st_nlink++;
+		if (st->st_mode & S_IFDIR)
+			st->st_nlink++;
 	}
 
 	return 0;

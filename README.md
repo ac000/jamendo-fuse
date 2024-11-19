@@ -3,48 +3,6 @@
 This is a FUSE (Filesystem in Userspace) providing access to the jamendo.com
 creative commons music platform.
 
-It's pretty basic currently, rather than providing access to every artist on
-there, you tell it what artists you want to access.
-
-For example with the following config file (default provided)
-
-```JSON
-{
-    "artists": [
-        [ "peergynt_lobogris",                      "7907" ],
-        [ "tunguska_electronic_music_society",      "343607" ]
-    ]
-}
-```
-
-will provide an initial file system with a top level directory of
-
-```
-drwxr-xr-x 2 andrew andrew 0 Mar 25 14:25 peergynt_lobogris
-drwxr-xr-x 2 andrew andrew 0 Mar 25 14:25 tunguska_electronic_music_society
-```
-
-As you move around this filesystem its contents will be dynamically created
-from http calls to jamendo.
-
-Under each of the top level artist directories you will have one or more album
-directories, under each of those you will find four directories for the four
-types of audio available (mp31, mp32, ogg & flac), and under them a directory
-of the album tracks. e.g specific track would be at
-
-
-```
-peergynt_lobogris/the_best_of_bluemoons_2009/flac/08_-_cd1_08_always.flac
-```
-
-Initial accesses can be a little slow while it does the http requests, but
-then this information is cached (except, for now at least, for the actual
-track audio data).
-
-As noted above, jamendo provides audio in a number of formats, 96kbit/sec and
-VBR MP3, 112kbit/sec Ogg Vorbis and FLAC (around 1Mbit/sec). Those correspond
-to the mp31, mp32, ogg & flac above.
-
 # Build
 
 jamendo-fuse has a few dependencies
@@ -98,49 +56,95 @@ $ sudo dnf install ~/rpmbuild/RPMS/x86_64/jamendo-fuse-*
 
 # Use
 
-In order to use this, the first thing you will need to do is get a client id
-from jamendo. This can be acquired by signing up
+jamendo-fuse currently has two modes of operation
+
+1) The original mode whereby a JSON config file is provided describing what
+   artists to provide access to.
+2) A mode whereby you are able to freely browse by artist.
+
+In order to use either of these modes, the first thing you will need to do
+is get a client id from Jamendo. This can be acquired by signing up
 [here](https://devportal.jamendo.com/signup).
 
 That will generate you a client\_id.
 
-Copy the *artists.json* into *~/.config/jamendo-fuse/*
+You can then set this ion your shell, e.g.
+
+```
+export JAMENDO_FUSE_CLIENT_ID=client_id
+```
+
+or just pass it to jamendo-fuse at runtime, e.g.
+
+```
+$ JAMENDO_FUSE_CLIENT_ID=client_id jamendo-fuse ...
+```
+
+## Original config file driven mode
+
+In this mode you should provide a JSON file that looks like
+
+```JSON
+{
+    "artists": [
+        [ "peergynt_lobogris",                      "7907" ],
+        [ "tunguska_electronic_music_society",      "343607" ]
+    ]
+}
+```
+
+placed under
+
+```
+~/.config/jamendo-fuse/artists.json
+```
+
+You can use the provided config file as a starting point
 
 ```
 $ mkdir -p ~/.config/jamendo-fuse
 $ cp artists.json ~/.config/jamendo-fuse/
 ```
 
-You need to pass that id into jamendo-fuse. You also need to tell jamendo-fuse
-where to mount the filesystem, that can be anywhere you have access to.
-
-So something like this
+You can then start jamendo-fude like
 
 ```
-$ JAMENDO_FUSE_CLIENT_ID=<client_id> jamendo-fuse /tmp/jamendo-fuse
+$ jamendo-fuse mountpoint
 ```
 
-**NOTE:** The mount point must exist.
+That assumes that you already set *JAMENDO_FUSE_CLIENT_ID* and the
+*mountpount* exists.
 
-You should now be able to browse around that filesystem, find some tracks and
-play them just however you normally would.
-
-This can then be unmounted by
+That will provide an initial file system with the root directory containing
 
 ```
-$ umount /tmp/jamendo-fuse
+dr-xr-xr-x 0 andrew andrew 0 Nov 19 03:27 peergynt_lobogris
+dr-xr-xr-x 0 andrew andrew 0 Nov 19 03:27 tunguska_electronic_music_society
 ```
 
-# Config
+As you move around this filesystem its contents will be dynamically created
+from http calls to Jamendo.
 
-*artists.json* is a simple config file that lists what artists to present in
-the filesystem.
+Under each of the top level artist directories you will have one or more album
+directories, under each of those you will find four directories for the four
+types of audio available (mp31, mp32, ogg & flac), and under them a directory
+of the album tracks. e.g. specific track would be at
 
-It consists of artists name (normalised) and artist\_id pairs.
+```
+peergynt_lobogris/the_best_of_bluemoons_2009/flac/08_-_cd1_08_always.flac
+```
 
-The name is how it shows up in the filesystem, all album and track names are
-presented in a normalised form by converting to lowercase, and replacing
-any characters not [a-z0-9-_.] to a '_'.
+When finished you can `killall jamendo-fuse` or you can pas `-f` to
+jamendo-fuse which keep it in the foreground and then you can simply ^C it.
+
+Either of those two options will result in the Jamendo-fuse filesystem
+being unmounted.
+
+If you run into trouble you can always unmount it manually with
+
+```
+$ umount mountpount
+```
 
 The *artist\id* can be found a number of ways, either through the API or by
 simply browsing on Jamendo and taking the id out of the url e.g for the
@@ -151,6 +155,40 @@ https://www.jamendo.com/artist/343607/tunguska-electronic-music-society
 ```
 
 and the artist\_id is '343607'.
+
+## Browse mode
+
+In this mode any config file is ignored. This allows you to browse Jamendo
+by artist.
+
+You get this mode by passing `--full` to jamendo-fuse e.g.
+
+```
+$ jamendo-fuse --full mountpoint
+```
+
+In this mode you will have a top-level "artists" (/artists) directory under
+which you will have directories a-z and then again under each of those
+directories a-z i.e.
+
+```
+artists/[a-z]/[a-z]/
+```
+
+Under those directories you will then have the artists, and then it's the
+same directory structure as above, e.g.
+
+```
+artists/p/e/peergynt_lobogris/the_best_of_bluemoons_2009/flac/08_-_cd1_08_always.flac
+```
+
+# Names
+
+All artist/album/track names are normalised to only contain the characters
+
+```
+[a-z0-9-_.]
+```
 
 # Debugging
 

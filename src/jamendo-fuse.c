@@ -38,6 +38,8 @@
 
 #define FUSE_MAX_ARGS		8
 
+#define DIR_NLINK_NR		2
+
 #define CLIENT_ID		client_id
 
 #define API_URL_MAX_LEN		256
@@ -103,6 +105,7 @@ struct jf_file {
 	char *name;
 	char *date;
 	mode_t mode;
+	nlink_t nlink;
 	off_t size;
 	blkcnt_t blocks;
 
@@ -138,6 +141,8 @@ static const char * const jf_autocomplete_entities[] = {
 };
 
 static const char *client_id;
+
+static size_t nr_root_items = DIR_NLINK_NR;
 
 static ac_btree_t *fstree;
 
@@ -227,6 +232,19 @@ static int compare_dentry_paths(const void *a, const void *b)
         return strcmp(dentry1->path, dentry2->path);
 }
 
+static struct jf_file *lookup_jfile_from_dentry(const char *path,
+						const struct dir_entry *dentry)
+{
+	struct jf_file jfile;
+
+	if (strcmp(path, "/") == 0)
+		return NULL;
+
+	jfile.name = strrchr(path, '/') + 1;
+
+	return ac_btree_lookup(dentry->jfiles, &jfile);
+}
+
 static size_t header_cb(char *buffer, size_t size, size_t nitems,
 			void *userdata)
 {
@@ -297,6 +315,7 @@ static void set_files_format(const char *album_id, const char *path)
 		jf_file = calloc(1, sizeof(struct jf_file));
 		jf_file->name = strdup(audio_fmts[i].name);
 		jf_file->mode = 0555 | S_IFDIR;
+		jf_file->nlink = DIR_NLINK_NR;
 		jf_file->id = strdup(album_id);
 		jf_file->audio_fmt = audio_fmts[i].audio_fmt;
 
@@ -370,13 +389,16 @@ static void set_files_tracks(const struct curl_buf *buf, const char *ext,
 	json_decref(root);
 }
 
-static void set_files_album(const struct curl_buf *buf, const char *path)
+static void set_files_album(const struct curl_buf *buf, const char *path,
+			    const struct dir_entry *prev_dir)
 {
 	json_t *root;
 	json_t *albums;
 	json_t *album;
 	size_t index;
+	struct jf_file *jfile;
 	struct dir_entry *dentry;
+	static const size_t nfmts = sizeof(audio_fmts) / sizeof(audio_fmts[0]);
 
 	root = json_loads(buf->buf, 0, NULL);
 	albums = json_object_get(root, "results");
@@ -399,6 +421,7 @@ static void set_files_album(const struct curl_buf *buf, const char *path)
 		normalise_fname(jf_file->name);
 		jf_file->date = strdup(json_string_value(date));
 		jf_file->mode = 0555 | S_IFDIR;
+		jf_file->nlink = DIR_NLINK_NR + nfmts;
 		jf_file->id = strdup(json_string_value(id));
 
 		ac_btree_add(dentry->jfiles, jf_file);
@@ -406,6 +429,10 @@ static void set_files_album(const struct curl_buf *buf, const char *path)
 	dentry->path = strdup(path);
 	dentry->type = JF_DT_ALBUM;
 	ac_btree_add(fstree, dentry);
+
+	jfile = lookup_jfile_from_dentry(path, prev_dir);
+	if (jfile)
+		jfile->nlink = DIR_NLINK_NR + index;
 
 	json_decref(root);
 }
@@ -416,6 +443,7 @@ static void set_file_entity(const struct curl_buf *buf, const char *path,
 	json_t *root;
 	json_t *results;
 	json_t *entities;
+	struct jf_file *jfile;
 	struct dir_entry *dentry;
 
 	root = json_loads(buf->buf, 0, NULL);
@@ -443,6 +471,10 @@ static void set_file_entity(const struct curl_buf *buf, const char *path,
 	dentry->path = strdup(path);
 	dentry->type = (enum jf_dentry_type)prev_dir->entity;
 	ac_btree_add(fstree, dentry);
+
+	jfile = lookup_jfile_from_dentry(path, prev_dir);
+	if (jfile)
+		jfile->nlink = DIR_NLINK_NR + json_array_size(entities);
 
 	json_decref(root);
 }
@@ -649,7 +681,7 @@ static void do_curl(const char *path, const struct dir_entry *dentry,
 	dbg("** api : %s\n", api);
 	curl_perform(api, &curl_buf);
 	if (dentry->type == JF_DT_ARTIST)
-		set_files_album(&curl_buf, path);
+		set_files_album(&curl_buf, path, dentry);
 	else if (dentry->type == JF_DT_FORMAT)
 		set_files_tracks(&curl_buf,
 				 audio_fmts[jfile->audio_fmt].ext,
@@ -674,6 +706,9 @@ static void fstree_populate_a_z(const char *path,
 		sprintf(alpha, "%c", c);
 		jf_file->name = strdup(alpha);
 		jf_file->mode = 0555 | S_IFDIR;
+
+		if (prev_dir->type == JF_DT_TL_ARTISTS)
+			jf_file->nlink = DIR_NLINK_NR + 26;
 
 		ac_btree_add(dentry->jfiles, jf_file);
 	}
@@ -771,7 +806,7 @@ static int jf_getattr(const char *path, struct stat *st,
 
 	if (strcmp(path, "/") == 0) {
 		st->st_mode = 0555 | S_IFDIR;
-		st->st_nlink = 2;
+		st->st_nlink = nr_root_items;
 		return 0;
 	}
 
@@ -785,11 +820,11 @@ static int jf_getattr(const char *path, struct stat *st,
 		return -1;
 
 	st->st_mode = jfilep->mode;
-	st->st_nlink = 1;
 
 	if (st->st_mode & S_IFREG) {
 		st->st_size = jfilep->size;
 		st->st_blocks = jfilep->blocks;
+		st->st_nlink = 1;
 	}
 
 	if (st->st_mode & S_IFDIR || dentry->type == JF_DT_TRACK) {
@@ -803,7 +838,7 @@ static int jf_getattr(const char *path, struct stat *st,
 		}
 
 		if (st->st_mode & S_IFDIR)
-			st->st_nlink++;
+			st->st_nlink = jfilep->nlink;
 	}
 
 	return 0;
@@ -890,11 +925,14 @@ static void fstree_init_jamendo(void)
 	jf_file = calloc(1, sizeof(struct jf_file));
 	jf_file->name = strdup("artists");
 	jf_file->mode = 0555 | S_IFDIR;
+	jf_file->nlink = DIR_NLINK_NR + 26;
 
 	dentry = calloc(1, sizeof(struct dir_entry));
 	dentry->jfiles = ac_btree_new(compare_file_paths, free_jf_file);
 
 	ac_btree_add(dentry->jfiles, jf_file);
+
+	nr_root_items++;
 
 	dentry->path = strdup("/");
 	dentry->type = JF_DT_TL_ARTISTS;
@@ -934,6 +972,8 @@ static void fstree_init_artists_json(void)
 		jf_file->mode = 0555 | S_IFDIR;
 
 		ac_btree_add(dentry->jfiles, jf_file);
+
+		nr_root_items++;
 	}
 	json_decref(root);
 	dentry->path = strdup("/");

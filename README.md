@@ -1,6 +1,6 @@
 # jamendo-fuse
 
-This is a FUSE (Filesystem in Userspace) providing access to the jamendo.com
+This is a FUSE (Filesystem in USErspace) providing access to the jamendo.com
 creative commons music platform.
 
 # Build
@@ -106,7 +106,7 @@ $ mkdir -p ~/.config/jamendo-fuse
 $ cp artists.json ~/.config/jamendo-fuse/
 ```
 
-You can then start jamendo-fude like
+You can then start jamendo-fuse like
 
 ```
 $ jamendo-fuse mountpoint
@@ -115,7 +115,7 @@ $ jamendo-fuse mountpoint
 That assumes that you already set *JAMENDO_FUSE_CLIENT_ID* and the
 *mountpount* exists.
 
-That will provide an initial file system with the root directory containing
+That will provide an initial filesystem with the root directory containing
 
 ```
 dr-xr-xr-x 0 andrew andrew 0 Nov 19 03:27 peergynt_lobogris

@@ -20,6 +20,7 @@
 #include <libgen.h>
 #include <ctype.h>
 #include <limits.h>
+#include <getopt.h>
 
 #include <curl/curl.h>
 
@@ -35,11 +36,22 @@
 #define gettid()        syscall(SYS_gettid)
 #endif
 
+#define FUSE_MAX_ARGS		8
+
 #define CLIENT_ID		client_id
 
 #define list_foreach(list)	for ( ; list; list = list->next)
 
 #define __unused		__attribute__((unused))
+
+enum getopt_opt_val {
+	OPT_FULL = 0,
+};
+
+static const struct option long_opts[] = {
+	{ "full",	no_argument,		NULL,	OPT_FULL },
+	{}
+};
 
 enum jf_dentry_type {
 	/*
@@ -913,8 +925,15 @@ static void fstree_init_artists_json(void)
 	ac_btree_add(fstree, dentry);
 }
 
+static void print_usage(void)
+{
+	printf("Usage: jamendo-fuse [-f] [--full] mount-point\n");
+}
+
 int main(int argc, char *argv[])
 {
+	int fuse_argc = 0;
+	char *fuse_argv[FUSE_MAX_ARGS];
 	bool use_config = true;
 	const char *dbg;
 	static const struct fuse_operations jf_operations = {
@@ -924,16 +943,44 @@ int main(int argc, char *argv[])
 	};
 
 	client_id = getenv("JAMENDO_FUSE_CLIENT_ID");
-	if (!client_id || argc < 2) {
-		fprintf(stderr,
-			"Usage: JAMENDO_FUSE_CLIENT_ID=<client_id> "
-			"jamendo-fuse <mount_point>\n");
+	if (!client_id) {
+		fprintf(stderr, "JAMENDO_FUSE_CLIENT_ID unset\n");
 		exit(EXIT_FAILURE);
 	}
 
 	dbg = getenv("JAMENDO_FUSE_DEBUG");
 	if (dbg && (*dbg == 'y' || *dbg == 't' || *dbg == '1'))
 		debug = true;
+
+	fuse_argv[fuse_argc++] = argv[0];
+
+	while (1) {
+		int c;
+		int opt_idx = 0;
+
+		c = getopt_long(argc, argv, "f", long_opts, &opt_idx);
+		if (c == -1)
+			break;
+
+		switch (c) {
+		case 'f':
+			fuse_argv[fuse_argc++] = "-f";
+			break;
+		case OPT_FULL:
+			use_config = false;
+			break;
+		default:
+			print_usage();
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	if (optind == argc) {
+		print_usage();
+		exit(EXIT_FAILURE);
+	}
+
+	fuse_argv[fuse_argc++] = argv[optind];
 
 	debug_fp = fopen("/tmp/jamendo-fuse.log", "w");
 
@@ -948,7 +995,7 @@ int main(int argc, char *argv[])
 
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 
-	fuse_main(argc, argv, &jf_operations, NULL);
+	fuse_main(fuse_argc, fuse_argv, &jf_operations, NULL);
 
 	ac_btree_destroy(fstree);
 	ac_slist_destroy(&curls, curl_easy_cleanup);

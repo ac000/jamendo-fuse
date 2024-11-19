@@ -8,6 +8,7 @@
 
 #define _GNU_SOURCE
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -41,10 +42,28 @@
 #define __unused		__attribute__((unused))
 
 enum jf_dentry_type {
+	/*
+	 * The first four items here *Should* match the items in
+	 * jf_autocomplete_entity
+	 */
 	JF_DT_ARTIST = 0,
 	JF_DT_ALBUM,
+	JF_DT_TRACK,
+	JF_DT_TAG,
+
 	JF_DT_FORMAT,
-	JF_DT_TRACK
+
+	JF_DT_TL_ARTISTS,
+
+	JF_DT_TL_A,
+	JF_DT_TL_AA,
+};
+
+enum jf_autocomplete_entity {
+	JF_A_E_ARTIST = 0,
+	JF_A_E_ALBUM,
+	JF_A_E_TRACK,
+	JF_A_E_TAG,
 };
 
 enum {
@@ -66,6 +85,7 @@ struct curl_buf {
 };
 
 struct jf_file {
+	char *orig_name;
 	char *name;
 	char *date;
 	mode_t mode;
@@ -81,6 +101,7 @@ struct jf_file {
 struct dir_entry {
 	char *path;
 	enum jf_dentry_type type;
+	enum jf_autocomplete_entity entity;
 	struct jf_file **jfiles;
 };
 
@@ -93,6 +114,13 @@ static const struct audio_fmt {
 	{ FMT_MP32,	"mp32",		"mp3"	},
 	{ FMT_OGG,	"ogg",		"oga"	},
 	{ FMT_FLAC,	"flac",		"flac"	},
+};
+
+static const char * const jf_autocomplete_entities[] = {
+	[JF_A_E_ARTIST] = "artists",
+	[JF_A_E_ALBUM]  = "albums",
+	[JF_A_E_TRACK]  = "tracks",
+	[JF_A_E_TAG]    = "tags",
 };
 
 static const char *client_id;
@@ -122,6 +150,7 @@ static void free_dentry(void *data)
 	for (i = 0; dentry->jfiles[i] != NULL; i++) {
 		struct jf_file *jfile = dentry->jfiles[i];
 
+		free(jfile->orig_name);
 		free(jfile->name);
 		free(jfile->id);
 		free(jfile->date);
@@ -348,6 +377,42 @@ static void set_files_album(const struct curl_buf *buf, const char *path)
 	json_decref(root);
 }
 
+static void set_file_entity(const struct curl_buf *buf, const char *path,
+			    const struct dir_entry *prev_dir)
+{
+	json_t *root;
+	json_t *results;
+	json_t *entities;
+	struct dir_entry *dentry;
+
+	root = json_loads(buf->buf, 0, NULL);
+	results = json_object_get(root, "results");
+	entities = json_object_get(results,
+				   jf_autocomplete_entities[prev_dir->entity]);
+
+	dentry = calloc(1, sizeof(struct dir_entry));
+	dentry->jfiles = calloc(json_array_size(entities) + 1, sizeof(void *));
+
+	for (size_t i = 0; i < json_array_size(entities); i++) {
+		json_t *entity;
+		struct jf_file *jf_file;
+
+		entity = json_array_get(entities, i);
+
+		jf_file = calloc(1, sizeof(struct jf_file));
+		jf_file->orig_name = strdup(json_string_value(entity));
+		jf_file->name = strdup(json_string_value(entity));
+		normalise_fname(jf_file->name);
+		jf_file->mode = 0755 | S_IFDIR;
+		dentry->jfiles[i] = jf_file;
+	}
+	dentry->path = strdup(path);
+	dentry->type = (enum jf_dentry_type)prev_dir->entity;
+	ac_btree_add(fstree, dentry);
+
+	json_decref(root);
+}
+
 static size_t curl_writeb_cb(void *contents, size_t size, size_t nmemb,
 			     void *userp)
 {
@@ -461,35 +526,138 @@ static void make_full_path(const char *path, const char *name, char *fpath)
 		snprintf(fpath, PATH_MAX, "%s/%s", path, name);
 }
 
-static void do_curl(const char *path, enum jf_dentry_type type,
-		    const struct jf_file *jfile)
+static char *lookup_artist_id(const char *name)
+{
+	char api[256];
+	char *aid = NULL;
+	char *cstr;
+	CURL *curl;
+	json_t *root;
+	json_t *results;
+	struct curl_buf curl_buf = {};
+	static const char *api_fmt =
+		"https://api.jamendo.com/v3.0/artists/"
+		"?client_id=%s&format=json&name=%s";
+
+	curl = curl_easy_init();
+	cstr = curl_easy_escape(curl, name, 0);
+
+	snprintf(api, sizeof(api), api_fmt, CLIENT_ID, cstr);
+
+	dbg("** api : %s\n", api);
+	curl_perform(api, &curl_buf);
+
+	curl_free(cstr);
+	curl_easy_cleanup(curl);
+
+	root = json_loads(curl_buf.buf, 0, NULL);
+	results = json_object_get(root, "results");
+	if (json_array_size(results) > 0) {
+		json_t *obj;
+		json_t *id;
+
+		obj = json_array_get(results, 0);
+		id = json_object_get(obj, "id");
+		aid = strdup(json_string_value(id));
+	}
+
+	json_decref(root);
+	free(curl_buf.buf);
+
+	return aid;
+}
+
+static void do_curl_autocomplete(const char *path,
+				 const struct dir_entry *dentry)
+{
+	char api[256];
+	char prefix[3] = {};
+	char *ptr;
+	struct curl_buf curl_buf = {};
+	static const char *api_fmt =
+		"https://api.jamendo.com/v3.0/autocomplete/"
+		"?client_id=%s&format=json&prefix=%s&entity=%s";
+
+	ptr = strchr(path, '/');
+	ptr++;
+	ptr = strchr(ptr, '/');
+
+	prefix[0] = *++ptr;
+	ptr += 2;
+	prefix[1] = *ptr;
+
+	snprintf(api, sizeof(api), api_fmt, CLIENT_ID, prefix,
+		 jf_autocomplete_entities[dentry->entity]);
+
+	dbg("** api : %s\n", api);
+	curl_perform(api, &curl_buf);
+
+	set_file_entity(&curl_buf, path, dentry);
+
+	free(curl_buf.buf);
+}
+
+static void do_curl(const char *path, const struct dir_entry *dentry,
+		    struct jf_file *jfile)
 {
 	const char *api_fmt = "https://api.jamendo.com/v3.0/albums";
 	char api[256];
 	struct curl_buf curl_buf = {};
 
-	if (type == JF_DT_ARTIST)
+	if (dentry->type == JF_DT_ARTIST) {
+		if (!jfile->id)
+			jfile->id = lookup_artist_id(jfile->orig_name);
+
 		snprintf(api, sizeof(api),
 			 "%s/?client_id=%s&format=json&artist_id=%s&limit=200",
 			 api_fmt, CLIENT_ID, jfile->id);
-	else if (type == JF_DT_FORMAT)
+	} else if (dentry->type == JF_DT_FORMAT) {
 		snprintf(api, sizeof(api),
 			 "%s/tracks/?client_id=%s&format=json&id=%s&audioformat=%s",
 			 api_fmt, CLIENT_ID, jfile->id,
 			 audio_fmts[jfile->audio_fmt].name);
-	else
+	} else {
 		return;
+	}
 
 	dbg("** api : %s\n", api);
 	curl_perform(api, &curl_buf);
-	if (type == JF_DT_ARTIST)
+	if (dentry->type == JF_DT_ARTIST)
 		set_files_album(&curl_buf, path);
-	else if (type == JF_DT_FORMAT)
+	else if (dentry->type == JF_DT_FORMAT)
 		set_files_tracks(&curl_buf,
 				 audio_fmts[jfile->audio_fmt].ext,
 				 path);
 
 	free(curl_buf.buf);
+}
+
+static void fstree_populate_a_z(const char *path,
+				const struct dir_entry *prev_dir)
+{
+	struct dir_entry *dentry;
+
+	dentry = calloc(1, sizeof(struct dir_entry));
+	dentry->jfiles = calloc(26 + 1, sizeof(void *));
+	for (int c = 'a', i = 0; c <= 'z'; c++, i++) {
+		struct jf_file *jf_file;
+		char alpha[2];
+
+		jf_file = calloc(1, sizeof(struct jf_file));
+		sprintf(alpha, "%c", c);
+		jf_file->name = strdup(alpha);
+		jf_file->mode = 0755 | S_IFDIR;
+		dentry->jfiles[i] = jf_file;
+	}
+	dentry->path = strdup(path);
+	dentry->entity = prev_dir->entity;
+
+	if (prev_dir->type == JF_DT_TL_ARTISTS)
+		dentry->type = JF_DT_TL_A;
+	else
+		dentry->type = prev_dir->type + 1;
+
+	ac_btree_add(fstree, dentry);
 }
 
 static struct dir_entry *get_dentry(const char *path, enum file_op op)
@@ -543,10 +711,20 @@ static struct dir_entry *get_dentry(const char *path, enum file_op op)
 		goto out_free;
 	}
 
-	if (dentry->type == JF_DT_ALBUM)
+	switch (dentry->type) {
+	case JF_DT_TL_ARTISTS:
+	case JF_DT_TL_A:
+		fstree_populate_a_z(lpath, dentry);
+		break;
+	case JF_DT_TL_AA:
+		do_curl_autocomplete(lpath, dentry);
+		break;
+	case JF_DT_ALBUM:
 		set_files_format(dentry->jfiles[i]->id, lpath);
-	else
-		do_curl(lpath, dentry->type, dentry->jfiles[i]);
+		break;
+	default:
+		do_curl(lpath, dentry, dentry->jfiles[i]);
+	}
 
 	data.path = lpath;
 	dentry = ac_btree_lookup(fstree, &data);
@@ -679,6 +857,25 @@ static int jf_read(const char *path, char *buffer, size_t size, off_t offset,
 	return curl_read_file(dentry->jfiles[i]->audio, buffer, size, offset);
 }
 
+static void fstree_init_jamendo(void)
+{
+	struct jf_file *jf_file;
+	struct dir_entry *dentry;
+
+	jf_file = calloc(1, sizeof(struct jf_file));
+	jf_file->name = strdup("artists");
+	jf_file->mode = 0755 | S_IFDIR;
+
+	dentry = calloc(1, sizeof(struct dir_entry));
+	dentry->jfiles = calloc(2 /* 1 + NULL */, sizeof(void *));
+
+	dentry->jfiles[0] = jf_file;
+	dentry->path = strdup("/");
+	dentry->type = JF_DT_TL_ARTISTS;
+	dentry->entity = JF_A_E_ARTIST;
+	ac_btree_add(fstree, dentry);
+}
+
 static void fstree_init_artists_json(void)
 {
 	json_t *root;
@@ -687,8 +884,6 @@ static void fstree_init_artists_json(void)
 	size_t i;
 	char artists_config[PATH_MAX];
 	struct dir_entry *dentry;
-
-	fstree = ac_btree_new(compare_paths, free_dentry);
 
 	snprintf(artists_config, sizeof(artists_config),
 		 "%s/.config/jamendo-fuse/artists.json", getenv("HOME"));
@@ -720,6 +915,7 @@ static void fstree_init_artists_json(void)
 
 int main(int argc, char *argv[])
 {
+	bool use_config = true;
 	const char *dbg;
 	static const struct fuse_operations jf_operations = {
 		.getattr	= jf_getattr,
@@ -741,11 +937,16 @@ int main(int argc, char *argv[])
 
 	debug_fp = fopen("/tmp/jamendo-fuse.log", "w");
 
-	fstree_init_artists_json();
+	printf("jamendo-fuse %s loading.\n", GIT_VERSION);
+
+	fstree = ac_btree_new(compare_paths, free_dentry);
+
+	if (!use_config)
+		fstree_init_jamendo();
+	else
+		fstree_init_artists_json();
 
 	curl_global_init(CURL_GLOBAL_DEFAULT);
-
-	printf("jamendo-fuse %s loading.\n", GIT_VERSION);
 
 	fuse_main(argc, argv, &jf_operations, NULL);
 

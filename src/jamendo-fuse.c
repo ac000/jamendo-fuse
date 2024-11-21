@@ -73,6 +73,7 @@ enum jf_dentry_type {
 
 	JF_DT_TL_A,
 	JF_DT_TL_AA,
+	JF_DT_TL_AAA,
 };
 
 enum jf_autocomplete_entity {
@@ -629,7 +630,7 @@ static void do_curl_autocomplete(const char *path,
 				 const struct dir_entry *dentry)
 {
 	char api[API_URL_MAX_LEN];
-	char prefix[3] = {};
+	char prefix[4] = {};
 	char *ptr;
 	struct curl_buf curl_buf = {};
 	static const char *api_fmt =
@@ -643,6 +644,8 @@ static void do_curl_autocomplete(const char *path,
 	prefix[0] = *++ptr;
 	ptr += 2;
 	prefix[1] = *ptr;
+	ptr += 2;
+	prefix[2] = *ptr;
 
 	snprintf(api, sizeof(api), api_fmt, CLIENT_ID, prefix,
 		 jf_autocomplete_entities[dentry->entity]);
@@ -707,7 +710,8 @@ static void fstree_populate_a_z(const char *path,
 		jf_file->name = strdup(alpha);
 		jf_file->mode = 0555 | S_IFDIR;
 
-		if (prev_dir->type == JF_DT_TL_ARTISTS)
+		if (prev_dir->type == JF_DT_TL_ARTISTS ||
+		    prev_dir->type == JF_DT_TL_A)
 			jf_file->nlink = DIR_NLINK_NR + 26;
 
 		ac_btree_add(dentry->jfiles, jf_file);
@@ -767,10 +771,10 @@ static struct dir_entry *get_dentry(const char *path, enum file_op op)
 
 	switch (dentry->type) {
 	case JF_DT_TL_ARTISTS:
-	case JF_DT_TL_A:
+	case JF_DT_TL_A ... JF_DT_TL_AA:
 		fstree_populate_a_z(lpath, dentry);
 		break;
-	case JF_DT_TL_AA:
+	case JF_DT_TL_AAA:
 		do_curl_autocomplete(lpath, dentry);
 		break;
 	case JF_DT_ALBUM:

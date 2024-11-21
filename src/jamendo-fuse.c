@@ -634,7 +634,7 @@ static void do_curl_autocomplete(const char *path,
 	struct curl_buf curl_buf = {};
 	static const char *api_fmt =
 		"https://api.jamendo.com/v3.0/autocomplete/"
-		"?client_id=%s&format=json&prefix=%s&entity=%s";
+		"?client_id=%s&format=json&prefix=%s&entity=%s&limit=200";
 
 	ptr = strchr(path, '/');
 	ptr++;

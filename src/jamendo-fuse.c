@@ -899,7 +899,7 @@ static int jf_read(const char *path, char *buffer, size_t size, off_t offset,
 		   struct fuse_file_info *fi __unused)
 {
 	struct jf_file jfile;
-	struct jf_file *jfilep;
+	const struct jf_file *jfilep;
 	struct dir_entry *dentry;
 
 	dbg("path [%s]\n", path);

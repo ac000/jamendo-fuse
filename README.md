@@ -192,13 +192,15 @@ All artist/album/track names are normalised to only contain the characters
 
 # Debugging
 
-You can enable a debug log (/tmp/jamendo-fuse.log) by setting the
+You can enable debugging by setting the
 
 ```
 JAMENDO_FUSE_DEBUG=true
 ```
 
 environment variable.
+
+**NOTE:** For this to work you *must* pass the `'f` command line argument.
 
 You can also build jamendo-fuse with libasan with
 

@@ -148,15 +148,14 @@ static size_t nr_root_items = DIR_NLINK_NR;
 static ac_btree_t *fstree;
 
 static bool debug;
-static FILE *debug_fp;
 
 #define dbg(fmt, ...) \
 	do { \
 		if (!debug) \
 			break; \
-		fprintf(debug_fp, "[%5ld] %s: " fmt, gettid(), __func__, \
+		fprintf(stdout, "[%5ld] %s: " fmt, gettid(), __func__, \
 			##__VA_ARGS__); \
-		fflush(debug_fp); \
+		fflush(stdout); \
 	} while (0)
 
 static void free_jf_file(void *data)
@@ -564,7 +563,7 @@ static int curl_read_file(const char *url, char *buf, size_t size,
 			 "jamendo-fuse / libcurl");
 
 	if (debug) {
-		curl_easy_setopt(read_file_curl, CURLOPT_STDERR, debug_fp);
+		curl_easy_setopt(read_file_curl, CURLOPT_STDERR, stdout);
 		curl_easy_setopt(read_file_curl, CURLOPT_VERBOSE, 1L);
 	}
 
@@ -1042,8 +1041,6 @@ int main(int argc, char *argv[])
 
 	fuse_argv[fuse_argc++] = argv[optind];
 
-	debug_fp = fopen("/tmp/jamendo-fuse.log", "w");
-
 	printf("jamendo-fuse %s loading.\n", GIT_VERSION);
 
 	fstree = ac_btree_new(compare_dentry_paths, free_dentry);
@@ -1060,7 +1057,6 @@ int main(int argc, char *argv[])
 	ac_btree_destroy(fstree);
 	ac_slist_destroy(&curls, curl_easy_cleanup);
 	curl_global_cleanup();
-	fclose(debug_fp);
 
 	exit(EXIT_SUCCESS);
 }

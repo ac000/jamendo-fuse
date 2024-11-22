@@ -482,10 +482,14 @@ static void set_file_entity(const struct curl_buf *buf, const char *path,
 static size_t curl_writeb_cb(void *contents, size_t size, size_t nmemb,
 			     void *userp)
 {
+	void *ptr;
 	size_t realsize = size * nmemb;
 	struct curl_buf *curl_buf = userp;
 
-	curl_buf->buf = realloc(curl_buf->buf, curl_buf->len + realsize + 1);
+	ptr = realloc(curl_buf->buf, curl_buf->len + realsize + 1);
+	if (!ptr)
+		return 0;
+	curl_buf->buf = ptr;
 
 	memcpy(curl_buf->buf + curl_buf->len, contents, realsize);
 	curl_buf->len += realsize;

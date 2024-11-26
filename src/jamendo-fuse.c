@@ -706,11 +706,10 @@ static void fstree_populate_a_z(const char *path,
 
 	for (int c = 'a', i = 0; c <= 'z'; c++, i++) {
 		struct jf_file *jf_file;
-		char alpha[2];
 
 		jf_file = calloc(1, sizeof(struct jf_file));
-		sprintf(alpha, "%c", c);
-		jf_file->name = strdup(alpha);
+		jf_file->name = calloc(2, sizeof(char));
+		*jf_file->name = c;
 		jf_file->mode = 0555 | S_IFDIR;
 
 		if (prev_dir->type == JF_DT_TL_ARTISTS ||
